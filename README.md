@@ -72,7 +72,19 @@ pwsh -NoProfile -File ./scripts/install-plugin.ps1 -ArtifactPath ./dist/windows/
 cp dist/linux/amd64/command-code.so /path/to/cliproxyapi/plugins/command-code.so
 ~~~
 
-Windows 使用 Copy-Item 将 command-code.dll 复制到宿主 plugins 目录，macOS 使用 command-code.dylib。完成复制后重启宿主。
+Windows：
+
+~~~powershell
+Copy-Item -LiteralPath ./dist/windows/amd64/command-code.dll -Destination C:/path/to/cliproxyapi/plugins/command-code.dll -Force
+~~~
+
+macOS：
+
+~~~bash
+cp dist/darwin/arm64/command-code.dylib /path/to/cliproxyapi/plugins/command-code.dylib
+~~~
+
+完成复制后重启宿主。
 
 ## 本地验证
 
