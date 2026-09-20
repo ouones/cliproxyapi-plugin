@@ -153,6 +153,106 @@ assert_eq $'/srv/cpa-parent/plugins\n/srv/cpa/plugins' \
     docker-candidates-filtered-and-normalized
 assert_fails mixed-native-and-docker-candidates detect_plugin_dir
 
+requested_version=latest
+assert_eq \
+    'https://github.com/ouones/cliproxyapi-plugin/releases/latest/download' \
+    "$(release_base_url)" latest-release-url
+requested_version=v0.1.0
+assert_eq \
+    'https://github.com/ouones/cliproxyapi-plugin/releases/download/v0.1.0' \
+    "$(release_base_url)" fixed-release-url
+requested_version=not-a-version
+assert_fails invalid-release-version release_base_url
+requested_version=latest
+
+release_dir="$test_root/release"
+release_source_dir="$release_dir"
+download_dir="$test_root/download"
+deployment_root="$test_root/deployment"
+plugin_dir="$deployment_root/plugins"
+mkdir -p "$release_dir" "$download_dir" "$deployment_root"
+printf '%s' 'new plugin bytes' > "$release_dir/command-code-linux-amd64.so"
+(
+    cd "$release_dir"
+    sha256sum command-code-linux-amd64.so > command-code-linux-amd64.so.sha256
+)
+download_file() {
+    local url="$1" destination="$2"
+    cp "$release_source_dir/${url##*/}" "$destination"
+}
+
+download_and_verify "$download_dir"
+install_verified_artifact \
+    "$download_dir/command-code-linux-amd64.so" "$plugin_dir"
+assert_eq 'new plugin bytes' "$(<"$plugin_dir/command-code.so")" \
+    verified-artifact-installed
+assert_eq 755 "$(stat -c '%a' "$plugin_dir/command-code.so")" \
+    installed-mode
+assert_eq 0 \
+    "$(find "$plugin_dir" -maxdepth 1 -type f -name '.command-code.so.*' | wc -l | tr -d ' ')" \
+    install-temp-removed
+
+main_plugin_root="$test_root/main-deployment"
+mkdir -p "$main_plugin_root"
+(
+    main --plugin-dir "$main_plugin_root/plugins" >/dev/null
+)
+assert_eq 'new plugin bytes' "$(<"$main_plugin_root/plugins/command-code.so")" \
+    main-installs-explicit-directory
+
+same_download_dir="$test_root/download-same"
+mkdir -p "$same_download_dir"
+download_and_verify "$same_download_dir"
+install_verified_artifact \
+    "$same_download_dir/command-code-linux-amd64.so" "$plugin_dir"
+assert_eq 0 \
+    "$(find "$plugin_dir" -maxdepth 1 -type f -name 'command-code.so.backup-*' | wc -l | tr -d ' ')" \
+    same-hash-does-not-backup
+
+printf '%s' 'updated plugin bytes' > "$release_dir/command-code-linux-amd64.so"
+(
+    cd "$release_dir"
+    sha256sum command-code-linux-amd64.so > command-code-linux-amd64.so.sha256
+)
+requested_version=v0.1.0
+updated_download_dir="$test_root/download-updated"
+mkdir -p "$updated_download_dir"
+download_and_verify "$updated_download_dir"
+install_verified_artifact \
+    "$updated_download_dir/command-code-linux-amd64.so" "$plugin_dir"
+assert_eq 'updated plugin bytes' "$(<"$plugin_dir/command-code.so")" \
+    changed-artifact-installed
+assert_eq 1 \
+    "$(find "$plugin_dir" -maxdepth 1 -type f -name 'command-code.so.backup-*' | wc -l | tr -d ' ')" \
+    changed-artifact-backed-up
+backup_path="$(find "$plugin_dir" -maxdepth 1 -type f -name 'command-code.so.backup-*' | head -n 1)"
+assert_eq 'new plugin bytes' "$(<"$backup_path")" backup-preserves-old-artifact
+if [[ "$(basename -- "$backup_path")" =~ ^command-code\.so\.backup-[0-9]{8}T[0-9]{6}Z(\.[0-9]+)?$ ]]; then
+    :
+else
+    printf 'FAIL backup-timestamp-format: got <%s>\n' "$(basename -- "$backup_path")" >&2
+    failures=$((failures + 1))
+fi
+
+bad_release_dir="$test_root/release-bad"
+bad_download_dir="$test_root/download-bad"
+mkdir -p "$bad_release_dir" "$bad_download_dir"
+printf '%s' 'bad plugin bytes' > "$bad_release_dir/command-code-linux-amd64.so"
+printf '%s  %s\n' \
+    0000000000000000000000000000000000000000000000000000000000000000 \
+    command-code-linux-amd64.so > "$bad_release_dir/command-code-linux-amd64.so.sha256"
+release_source_dir="$bad_release_dir"
+assert_fails checksum-mismatch download_and_verify "$bad_download_dir"
+assert_eq 'updated plugin bytes' "$(<"$plugin_dir/command-code.so")" \
+    checksum-failure-keeps-installed-artifact
+assert_eq 1 \
+    "$(find "$plugin_dir" -maxdepth 1 -type f -name 'command-code.so.backup-*' | wc -l | tr -d ' ')" \
+    checksum-failure-keeps-backups
+printf '%s  %s\n' \
+    0000000000000000000000000000000000000000000000000000000000000000 \
+    ../command-code-linux-amd64.so > "$bad_release_dir/command-code-linux-amd64.so.sha256"
+assert_fails checksum-path-traversal download_and_verify "$bad_download_dir"
+
 requested_plugin_dir="$test_root/explicit"
 proc_root="$test_root/missing-proc"
 assert_eq "$test_root/explicit" "$(detect_plugin_dir)" explicit-dir-skips-proc

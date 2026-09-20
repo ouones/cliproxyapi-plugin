@@ -301,6 +301,113 @@ detect_plugin_dir() {
     } | sort -u | select_single_candidate
 }
 
+release_base_url() {
+    case "$requested_version" in
+        latest)
+            printf 'https://github.com/%s/releases/latest/download\n' "$repository"
+            ;;
+        v[0-9]*.[0-9]*.[0-9]*)
+            if [[ "$requested_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+                printf 'https://github.com/%s/releases/download/%s\n' \
+                    "$repository" "$requested_version"
+            else
+                printf '%s\n' 'Invalid version; expected vX.Y.Z.' >&2
+                return 1
+            fi
+            ;;
+        *)
+            printf '%s\n' 'Invalid version; expected latest or vX.Y.Z.' >&2
+            return 1
+            ;;
+    esac
+}
+
+download_file() {
+    curl -fsSL "$1" -o "$2"
+}
+
+validate_checksum_file() {
+    local checksum_file="$1"
+
+    awk '
+        BEGIN { entries = 0; invalid = 0 }
+        /^[[:space:]]*$/ { invalid = 1; next }
+        {
+            entries++
+            if (NF != 2 || $2 != "command-code-linux-amd64.so" ||
+                $2 ~ /\// || $2 ~ /\.\./) {
+                invalid = 1
+            }
+        }
+        END {
+            exit (entries == 1 && invalid == 0) ? 0 : 1
+        }
+    ' "$checksum_file"
+}
+
+download_and_verify() {
+    local download_dir="$1"
+    local base_url checksum_file
+
+    [[ -d "$download_dir" ]] || return 1
+    base_url="$(release_base_url)" || return 1
+    download_file "$base_url/command-code-linux-amd64.so" \
+        "$download_dir/command-code-linux-amd64.so"
+    download_file "$base_url/command-code-linux-amd64.so.sha256" \
+        "$download_dir/command-code-linux-amd64.so.sha256"
+
+    checksum_file="$download_dir/command-code-linux-amd64.so.sha256"
+    (
+        cd "$download_dir" || exit 1
+        validate_checksum_file "$checksum_file" || exit 1
+        sha256sum --check --strict command-code-linux-amd64.so.sha256
+    )
+}
+
+install_verified_artifact() (
+    local source="$1"
+    local plugin_dir="$2"
+    local target parent source_hash target_hash
+    local temp_path=""
+    local backup_base backup_path suffix
+
+    cleanup_temp() {
+        if [[ -n "$temp_path" ]]; then
+            rm -f -- "$temp_path"
+        fi
+    }
+
+    trap cleanup_temp EXIT
+    [[ -f "$source" ]] || exit 1
+    parent="$(dirname -- "$plugin_dir")"
+    [[ -d "$parent" ]] || exit 1
+    mkdir -p -- "$plugin_dir"
+    target="$plugin_dir/command-code.so"
+
+    source_hash="$(sha256sum "$source" | awk '{print $1}')"
+    if [[ -f "$target" ]]; then
+        target_hash="$(sha256sum "$target" | awk '{print $1}')"
+        [[ "$source_hash" == "$target_hash" ]] && exit 0
+    fi
+
+    temp_path="$(mktemp "$plugin_dir/.command-code.so.XXXXXX")"
+    install -m 0755 -- "$source" "$temp_path"
+
+    if [[ -e "$target" || -L "$target" ]]; then
+        backup_base="$plugin_dir/command-code.so.backup-$(date -u +%Y%m%dT%H%M%SZ)"
+        backup_path="$backup_base"
+        suffix=0
+        while [[ -e "$backup_path" || -L "$backup_path" ]]; do
+            suffix=$((suffix + 1))
+            backup_path="$backup_base.$suffix"
+        done
+        cp -p -- "$target" "$backup_path"
+    fi
+
+    mv -f -- "$temp_path" "$target"
+    temp_path=""
+)
+
 main() {
     parse_args "$@"
     (( help_requested == 1 )) && return 0
@@ -308,9 +415,26 @@ main() {
         printf '%s\n' 'This installer supports Linux amd64 only.' >&2
         return 1
     }
-    detect_plugin_dir >/dev/null
-    printf '%s\n' 'Installer download support is not configured.' >&2
-    return 1
+    require_command curl || {
+        printf '%s\n' 'Missing required command: curl.' >&2
+        return 1
+    }
+    require_command sha256sum || {
+        printf '%s\n' 'Missing required command: sha256sum.' >&2
+        return 1
+    }
+    require_command install || {
+        printf '%s\n' 'Missing required command: install.' >&2
+        return 1
+    }
+    local plugin_dir download_dir
+    plugin_dir="$(detect_plugin_dir)"
+    download_dir="$(mktemp -d)"
+    trap 'rm -rf -- "$download_dir"' EXIT
+    download_and_verify "$download_dir"
+    install_verified_artifact \
+        "$download_dir/command-code-linux-amd64.so" "$plugin_dir"
+    printf '%s\n' 'Installation complete. Restart CLIProxyAPI to load command-code.'
 }
 
 if [[ "${COMMAND_CODE_INSTALLER_LIBRARY:-0}" != 1 ]]; then
