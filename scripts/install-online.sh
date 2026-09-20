@@ -207,6 +207,67 @@ discover_native_candidates() {
     done
 }
 
+docker_available() {
+    command -v docker >/dev/null 2>&1
+}
+
+is_cliproxyapi_container() {
+    local container_id="$1"
+    local image path identity
+
+    image="$(docker inspect --format '{{.Config.Image}}' "$container_id" 2>/dev/null)" || image=""
+    path="$(docker inspect --format '{{.Path}}' "$container_id" 2>/dev/null)" || path=""
+    identity="${image,,} ${path,,}"
+    [[ "$identity" == *cliproxyapi* || "$identity" == *cli-proxy-api* ]]
+}
+
+host_path_for_container_path() {
+    local container_id="$1"
+    local container_path="$2"
+    local mount_format='{{range .Mounts}}{{.Source}}|{{.Destination}}{{"\n"}}{{end}}'
+    local source destination relative candidate
+    local best_source="" best_relative="" best_length=-1
+
+    while IFS='|' read -r source destination; do
+        [[ -n "$source" && -n "$destination" ]] || continue
+        [[ "$source" == /* ]] || continue
+        [[ "$source" == /var/lib/docker/overlay2/* ]] && continue
+        destination="${destination%/}"
+
+        if [[ "$container_path" == "$destination" ]]; then
+            relative=""
+        elif [[ "$container_path" == "$destination/"* ]]; then
+            relative="${container_path#"$destination/"}"
+        else
+            continue
+        fi
+
+        if (( ${#destination} > best_length )); then
+            best_source="$source"
+            best_relative="$relative"
+            best_length=${#destination}
+        fi
+    done < <(docker inspect --format "$mount_format" "$container_id" 2>/dev/null || true)
+
+    [[ -n "$best_source" ]] || return 1
+    candidate="$best_source"
+    [[ -n "$best_relative" ]] && candidate="$candidate/$best_relative"
+    readlink -m -- "$candidate"
+}
+
+discover_docker_candidates() {
+    local container_id candidate
+
+    docker_available || return 0
+    while IFS= read -r container_id; do
+        [[ -n "$container_id" ]] || continue
+        if is_cliproxyapi_container "$container_id" &&
+            candidate="$(host_path_for_container_path "$container_id" /CLIProxyAPI/plugins)"; then
+            printf '%s\n' "$candidate"
+        fi
+    done < <(docker ps --format '{{.ID}}' 2>/dev/null || true)
+}
+
 select_single_candidate() {
     local candidate
     local -a candidates=()
@@ -234,7 +295,10 @@ detect_plugin_dir() {
         return 0
     fi
 
-    discover_native_candidates | sort -u | select_single_candidate
+    {
+        discover_native_candidates
+        discover_docker_candidates
+    } | sort -u | select_single_candidate
 }
 
 main() {

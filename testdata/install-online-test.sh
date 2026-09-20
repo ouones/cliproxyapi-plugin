@@ -91,6 +91,68 @@ assert_eq "$instance_one/plugins" \
     "$(printf '%s\n' "$(discover_native_candidates)" | sort -u | select_single_candidate)" \
     duplicate-native-candidates-deduplicated
 
+fake_bin="$test_root/fake-bin"
+docker_state="$test_root/docker-state"
+mkdir -p "$fake_bin" "$docker_state"
+cat > "$fake_bin/docker" <<'DOCKER'
+#!/usr/bin/env bash
+set -euo pipefail
+
+state_dir="${FAKE_DOCKER_STATE:?}"
+if [[ "$1" == ps && "$2" == --format ]]; then
+    cat "$state_dir/ids"
+    exit 0
+fi
+
+if [[ "$1" == inspect && "$2" == --format ]]; then
+    format="$3"
+    container_id="$4"
+    case "$format" in
+        '{{.Config.Image}}') cat "$state_dir/$container_id.image" ;;
+        '{{.Path}}') cat "$state_dir/$container_id.path" ;;
+        *'.Mounts'*) cat "$state_dir/$container_id.mounts" ;;
+        *) exit 2 ;;
+    esac
+    exit 0
+fi
+
+exit 2
+DOCKER
+chmod +x "$fake_bin/docker"
+printf '%s\n' cpa-exact cpa-parent cpa-no-plugin unrelated > "$docker_state/ids"
+printf '%s\n' 'ghcr.io/ouones/cliproxyapi:latest' > "$docker_state/cpa-exact.image"
+printf '%s\n' '/entrypoint' > "$docker_state/cpa-exact.path"
+{
+    printf '%s|%s\n' /srv/cpa-parent /CLIProxyAPI
+    printf '%s|%s\n' /srv/cpa/plugins /CLIProxyAPI/plugins
+} > "$docker_state/cpa-exact.mounts"
+printf '%s\n' nginx > "$docker_state/cpa-parent.image"
+printf '%s\n' '/usr/local/bin/cli-proxy-api' > "$docker_state/cpa-parent.path"
+printf '%s|%s\n' /srv/cpa-parent /CLIProxyAPI > "$docker_state/cpa-parent.mounts"
+printf '%s\n' CLIProxyAPI > "$docker_state/cpa-no-plugin.image"
+printf '%s\n' /entrypoint > "$docker_state/cpa-no-plugin.path"
+printf '%s|%s\n' /srv/unrelated /data > "$docker_state/cpa-no-plugin.mounts"
+printf '%s\n' nginx > "$docker_state/unrelated.image"
+printf '%s\n' /bin/nginx > "$docker_state/unrelated.path"
+printf '%s|%s\n' /srv/nginx /data > "$docker_state/unrelated.mounts"
+
+export FAKE_DOCKER_STATE="$docker_state"
+export PATH="$fake_bin:$PATH"
+requested_plugin_dir=""
+proc_root="$test_root/missing-proc"
+assert_eq /srv/cpa/plugins \
+    "$(host_path_for_container_path cpa-exact /CLIProxyAPI/plugins)" \
+    exact-mount-wins-over-parent
+assert_eq /srv/cpa-parent/plugins \
+    "$(host_path_for_container_path cpa-parent /CLIProxyAPI/plugins)" \
+    parent-mount-adds-relative-path
+assert_fails missing-plugin-mount \
+    host_path_for_container_path cpa-no-plugin /CLIProxyAPI/plugins
+assert_eq $'/srv/cpa-parent/plugins\n/srv/cpa/plugins' \
+    "$(discover_docker_candidates | sort -u)" \
+    docker-candidates-filtered-and-normalized
+assert_fails mixed-native-and-docker-candidates detect_plugin_dir
+
 requested_plugin_dir="$test_root/explicit"
 proc_root="$test_root/missing-proc"
 assert_eq "$test_root/explicit" "$(detect_plugin_dir)" explicit-dir-skips-proc
