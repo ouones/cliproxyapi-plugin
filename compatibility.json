@@ -1,0 +1,12 @@
+{
+  "cliProxyAPI": {
+    "release": "v7.3.8",
+    "abiVersion": 1,
+    "schemaVersion": 6
+  },
+  "commandCode": {
+    "wireVersion": "1.58.0",
+    "driftCheckURL": "https://registry.npmjs.org/command-code/latest",
+    "driftPolicy": "warn-only"
+  }
+}

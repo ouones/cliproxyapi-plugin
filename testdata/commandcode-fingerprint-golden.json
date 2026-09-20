@@ -1,0 +1,40 @@
+{
+  "primary": {
+    "salt": "fixture-salt",
+    "apiKey": "user_alpha",
+    "expected": {
+      "thumbmark": "1b992906647735a807498d21a8557a308b2c9d06e560fc8655b92dfe45f4b928",
+      "components": {
+        "machineIdHash": "b2da0683181d28a0eb25469091b3ec07a768dbc042efe4a60685b7985ffb6321",
+        "macHashes": [
+          "bc110c19e87603cef797a5e3e64186097815bfcdf53b09005f5858446ea733e0",
+          "5e0007442c8f5b6898388d84b6663f7138194521f8fedb50d368e49136c8ea63",
+          "baadf69b21f291cf1cbf66c1d545cedcbc23c356a82507e4e5ba6794453e79c2",
+          "c36c6033942f869f500a36ae133c45e9e32bdae9f1d0ff6c8eca13d2115cd8a2",
+          "211e0f0fcecb595bb6d56a18e941053d802da96f66a1b3088e0e757f1388a802"
+        ],
+        "osUserHash": "9b7ebf9660f665909a2c156243557ffd36a1dfd0377ca6078a32fa07d751f49e",
+        "hostnameHash": "6681cc1e8881c835613bcd96dc57b2f958787b9eafa017a8d1d78f1fd30c9365",
+        "gitEmailHash": "a79a2a669a4ef3de2224ee34bc3d4f1021a96d9e14a284b126ba179b03ac01d4",
+        "platform": "win32",
+        "arch": "x64",
+        "osRelease": "10.0.22631",
+        "cpuModel": "AMD Ryzen 7 7800X3D",
+        "cpuCount": 8,
+        "memGiB": 24,
+        "isContainer": false,
+        "timezone": "Pacific/Auckland",
+        "runtime": "cli",
+        "collectorVersion": 1
+      }
+    }
+  },
+  "isolatedApiKey": {
+    "salt": "fixture-salt",
+    "apiKey": "user_beta"
+  },
+  "isolatedSalt": {
+    "salt": "other-salt",
+    "apiKey": "user_alpha"
+  }
+}
