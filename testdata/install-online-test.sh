@@ -57,6 +57,15 @@ assert_eq "$instance_one/runtime-plugins" \
     "$(native_candidate_for_pid 101)" native-relative-config-and-dir
 assert_eq runtime-plugins "$(read_plugins_dir "$instance_one/conf/config.yaml")" \
     double-quoted-plugin-dir
+
+mkdir -p "$fake_proc/105"
+ln -s "$test_root/cli-proxy-api" "$fake_proc/105/exe"
+ln -s "$instance_one" "$fake_proc/105/cwd"
+printf 'cli-proxy-api\0-config\0conf/config.yaml\0' > "$fake_proc/105/cmdline"
+assert_eq "$instance_one/runtime-plugins" \
+    "$(native_candidate_for_pid 105)" native-single-dash-config
+rm -rf -- "$fake_proc/105"
+
 printf '%s\n' 'plugins: {dir: runtime-plugins}' > "$test_root/complex-config.yaml"
 assert_fails complex-plugins-value \
     read_plugins_dir "$test_root/complex-config.yaml"

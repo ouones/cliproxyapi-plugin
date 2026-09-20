@@ -163,13 +163,13 @@ config_arg_for_pid() {
     [[ -r "$cmdline" ]] || return 1
     while IFS= read -r -d '' arg; do
         case "$arg" in
-            --config)
+            --config|-config)
                 IFS= read -r -d '' arg || return 2
                 printf '%s\n' "$arg"
                 return 0
                 ;;
-            --config=*)
-                printf '%s\n' "${arg#--config=}"
+            --config=*|-config=*)
+                printf '%s\n' "${arg#*=}"
                 return 0
                 ;;
         esac
