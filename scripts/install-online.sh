@@ -437,7 +437,7 @@ main() {
         printf '%s\n' 'Missing required command: install.' >&2
         return 1
     }
-    local plugin_dir download_dir
+    local plugin_dir
     plugin_dir="$(detect_plugin_dir)"
     download_dir="$(mktemp -d)"
     trap 'rm -rf -- "$download_dir"' EXIT

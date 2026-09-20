@@ -207,6 +207,7 @@ assert_eq 0 \
 
 main_plugin_root="$test_root/main-deployment"
 mkdir -p "$main_plugin_root"
+unset download_dir
 (
     main --plugin-dir "$main_plugin_root/plugins" >/dev/null
 )
