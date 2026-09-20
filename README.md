@@ -52,7 +52,35 @@ macOS Apple Silicon：
 
 ## 安装
 
-推荐使用安装脚本。安装脚本只接收一个已有动态库和一个显式宿主插件目录，只覆盖目标目录中的 command-code 动态库，不读取或修改宿主配置、API key 或其他插件文件。
+### Linux amd64 在线安装（推荐）
+
+在已启动且只有一个 CLIProxyAPI 实例的 Linux amd64 主机上执行：
+
+~~~bash
+curl -fsSL https://raw.githubusercontent.com/ouones/cliproxyapi-plugin/master/scripts/install-online.sh | sudo bash
+~~~
+
+安装器只会从原生进程的 `/proc` 信息和 Docker 的持久化挂载中寻找插件目录，并在规范化、去重后恰好得到一个候选时继续。原生进程必须是 `cli-proxy-api` 或 `cliproxyapi`；相对 `--config`、`plugins.dir` 都按进程 cwd 解析。Docker 必须把宿主持久化目录挂载到 `/CLIProxyAPI/plugins` 或其父目录，安装器不会写容器层。
+
+多实例、宿主尚未启动或无法自动检测时，显式指定目录：
+
+~~~bash
+curl -fsSL https://raw.githubusercontent.com/ouones/cliproxyapi-plugin/master/scripts/install-online.sh \
+  | sudo bash -s -- --plugin-dir /path/to/cliproxyapi/plugins
+~~~
+
+可以固定已发布版本：
+
+~~~bash
+curl -fsSL https://raw.githubusercontent.com/ouones/cliproxyapi-plugin/master/scripts/install-online.sh \
+  | sudo bash -s -- --version v0.1.0
+~~~
+
+在线安装只下载并校验 `command-code-linux-amd64.so`，不读取或修改配置、API key、其他插件，也不自动重启 systemd 或 Docker。安装后需要手动重启 CLIProxyAPI。再次执行可升级：相同 SHA256 时幂等成功且不创建备份，不同版本会在目标目录保留 UTC 时间戳备份后原子替换。
+
+### 已构建产物的离线安装
+
+离线安装脚本只接收一个已有动态库和一个显式宿主插件目录，只覆盖目标目录中的 command-code 动态库：
 
 Linux 或 macOS：
 

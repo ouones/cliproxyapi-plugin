@@ -1,0 +1,48 @@
+name: Release Linux plugin
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release-linux-amd64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Validate tag and source version
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_version="$(sed -n 's/.*pluginVersion[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' contract.go)"
+          test -n "$source_version"
+          test "$GITHUB_REF_NAME" = "v$source_version"
+      - name: Test and build Linux amd64
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./...
+          go vet ./...
+          shellcheck scripts/install-plugin.sh scripts/install-online.sh testdata/install-online-test.sh
+          bash testdata/install-online-test.sh
+          ./scripts/build-plugin.sh linux amd64
+          cc -std=c11 -Wall -Wextra -Werror testdata/load-plugin-smoke.c -ldl -pthread -o /tmp/load-plugin-smoke
+          /tmp/load-plugin-smoke dist/linux/amd64/command-code.so
+      - name: Package release assets
+        shell: bash
+        run: |
+          install -m 0755 dist/linux/amd64/command-code.so command-code-linux-amd64.so
+          sha256sum command-code-linux-amd64.so > command-code-linux-amd64.so.sha256
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            command-code-linux-amd64.so command-code-linux-amd64.so.sha256 \
+            --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
