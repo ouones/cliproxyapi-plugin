@@ -5,3 +5,4 @@ dist/
 *.h
 *.exe
 .cache/
+.superpowers/

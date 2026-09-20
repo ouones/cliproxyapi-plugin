@@ -1,0 +1,34 @@
+name: Validate CLIProxyAPI plugin
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-linux-amd64:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test and validate ABI artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./...
+          go vet ./...
+          ./scripts/build-plugin.sh linux amd64
+          file dist/linux/amd64/command-code.so
+          readelf -h dist/linux/amd64/command-code.so | grep -F 'Class:                             ELF64'
+          readelf -h dist/linux/amd64/command-code.so | grep -F 'Machine:                           Advanced Micro Devices X86-64'
+          cc -std=c11 -Wall -Wextra -Werror testdata/load-plugin-smoke.c -ldl -pthread -o "$RUNNER_TEMP/load-plugin-smoke"
+          "$RUNNER_TEMP/load-plugin-smoke" dist/linux/amd64/command-code.so
