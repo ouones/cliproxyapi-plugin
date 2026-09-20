@@ -5,6 +5,7 @@ export MSYS=winsymlinks:nativestrict
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 export COMMAND_CODE_INSTALLER_LIBRARY=1
 # shellcheck source=../scripts/install-online.sh
+# shellcheck disable=SC1091
 source "$repo_root/scripts/install-online.sh"
 
 failures=0
@@ -257,6 +258,7 @@ printf '%s  %s\n' \
 assert_fails checksum-path-traversal download_and_verify "$bad_download_dir"
 
 requested_plugin_dir="$test_root/explicit"
+# shellcheck disable=SC2034
 proc_root="$test_root/missing-proc"
 assert_eq "$test_root/explicit" "$(detect_plugin_dir)" explicit-dir-skips-proc
 

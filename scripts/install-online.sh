@@ -380,7 +380,9 @@ install_verified_artifact() (
     local backup_base backup_path suffix
 
     cleanup_temp() {
+        # shellcheck disable=SC2317
         if [[ -n "$temp_path" ]]; then
+            # shellcheck disable=SC2317
             rm -f -- "$temp_path"
         fi
     }
