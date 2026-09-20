@@ -56,6 +56,9 @@ assert_eq "$instance_one/runtime-plugins" \
     "$(native_candidate_for_pid 101)" native-relative-config-and-dir
 assert_eq runtime-plugins "$(read_plugins_dir "$instance_one/conf/config.yaml")" \
     double-quoted-plugin-dir
+printf '%s\n' 'plugins: {dir: runtime-plugins}' > "$test_root/complex-config.yaml"
+assert_fails complex-plugins-value \
+    read_plugins_dir "$test_root/complex-config.yaml"
 
 cat > "$instance_one/conf/config.yaml" <<'YAML'
 plugins:

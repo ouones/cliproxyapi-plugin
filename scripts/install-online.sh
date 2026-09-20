@@ -75,6 +75,7 @@ read_plugins_dir() {
             plugins_indent = -1
             child_indent = -1
             found = 0
+            invalid = 0
             single_quote = sprintf("%c", 39)
         }
 
@@ -82,11 +83,15 @@ read_plugins_dir() {
 
         {
             line = $0
-            if (line ~ /^[[:space:]]*plugins:[[:space:]]*$/) {
+            if (line ~ /^[[:space:]]*plugins:[[:space:]]*($|#)/) {
                 in_plugins = 1
                 plugins_indent = leading_spaces(line)
                 child_indent = -1
                 next
+            }
+            if (line ~ /^[[:space:]]*plugins:/) {
+                invalid = 1
+                exit 2
             }
 
             if (!in_plugins) {
@@ -120,6 +125,7 @@ read_plugins_dir() {
             value = trim(value)
             if (value == "" || value == "|" || value == ">" ||
                 value ~ /^[\[\{]/ || value ~ /^-/) {
+                invalid = 1
                 exit 2
             }
 
@@ -127,10 +133,12 @@ read_plugins_dir() {
             last = substr(value, length(value), 1)
             if (first == single_quote || first == "\"") {
                 if (last != first || length(value) < 2) {
+                    invalid = 1
                     exit 2
                 }
                 value = substr(value, 2, length(value) - 2)
             } else if (last == single_quote || last == "\"") {
+                invalid = 1
                 exit 2
             }
 
@@ -140,7 +148,7 @@ read_plugins_dir() {
         }
 
         END {
-            if (!found) {
+            if (!found && !invalid) {
                 print "plugins"
             }
         }
