@@ -24,7 +24,21 @@ plugins:
       api-key: "user_..."
 ~~~
 
-api-key 必须以 user_ 开头。插件只在进程内保存该值，不把它写入注册响应或日志。将动态库复制到宿主的 plugins 目录后，必须重启 CLIProxyAPI，宿主才会重新发现并注册插件。
+api-key 必须以 user_ 开头。插件只在进程内保存该值，不把它写入注册响应或日志。首次将动态库复制到宿主的 plugins 目录后，需要重启 CLIProxyAPI 让宿主发现并注册插件；插件已加载后，配置更新不需要替换动态库或重启。
+
+### 运行中刷新模型目录
+
+CLIProxyAPI 运行期间，可通过管理 API 的插件配置 PATCH 安全触发刷新。请求需要使用宿主管理密钥；PATCH 会保留其他插件配置字段，只更新请求中的字段：
+
+~~~bash
+curl -fsS -X PATCH \
+  -H 'Authorization: Bearer <management-key>' \
+  -H 'Content-Type: application/json' \
+  http://127.0.0.1:8080/v0/management/plugins/command-code/config \
+  -d '{"api-key":"user_..."}'
+~~~
+
+宿主保存配置后会调用 `plugin.reconfigure`。插件会通过宿主 HTTP transport 请求实时目录；成功时下一次完整模型注册会原子替换整个目录，因此新增模型出现、上游已删除模型消失。上游超时、错误、畸形响应或空目录不会清空最后一次有效目录。刷新过程不需要重启 CLIProxyAPI，也不需要替换 `.so`/`.dll`/`.dylib`。
 
 ## 构建
 

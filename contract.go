@@ -71,6 +71,19 @@ type commandCodeModel struct {
 
 var commandCodeModels = loadModels()
 
+var commandCodeModelCatalogState = struct {
+	sync.RWMutex
+	models []pluginapi.ModelInfo
+}{
+	models: append([]pluginapi.ModelInfo(nil), commandCodeModels...),
+}
+
+var commandCodeModelCatalogRefreshMu sync.Mutex
+
+var newCommandCodeModelCatalogHTTPClient = func() pluginapi.HostHTTPClient {
+	return NewCommandCodeHostHTTPClient(callHost, "")
+}
+
 func loadModels() []pluginapi.ModelInfo {
 	var definitions []modelDefinition
 	if err := json.Unmarshal(modelsJSON, &definitions); err != nil {
@@ -88,6 +101,24 @@ func loadModels() []pluginapi.ModelInfo {
 		})
 	}
 	return models
+}
+
+func modelCatalogSnapshot() []pluginapi.ModelInfo {
+	commandCodeModelCatalogState.RLock()
+	defer commandCodeModelCatalogState.RUnlock()
+	return append([]pluginapi.ModelInfo(nil), commandCodeModelCatalogState.models...)
+}
+
+func replaceModelCatalog(models []pluginapi.ModelInfo) {
+	commandCodeModelCatalogState.Lock()
+	commandCodeModelCatalogState.models = append([]pluginapi.ModelInfo(nil), models...)
+	commandCodeModelCatalogState.Unlock()
+}
+
+func resetModelCatalog() {
+	commandCodeModelCatalogRefreshMu.Lock()
+	defer commandCodeModelCatalogRefreshMu.Unlock()
+	replaceModelCatalog(commandCodeModels)
 }
 
 type envelope struct {
@@ -210,6 +241,7 @@ func clearCredentialState() {
 	credentialState.Lock()
 	credentialState.apiKey = ""
 	credentialState.Unlock()
+	resetModelCatalog()
 	commandCodeIdentityStates.reset()
 }
 
@@ -240,20 +272,31 @@ func pluginRegistration() registration {
 }
 
 func modelRegistration() pluginapi.ModelRegistrationResponse {
-	return modelRegistrationFor(commandCodeModels)
+	return modelRegistrationFor(modelCatalogSnapshot())
 }
 
 func modelRegistrationContext(ctx context.Context, client pluginapi.HostHTTPClient) pluginapi.ModelRegistrationResponse {
-	models := commandCodeModels
+	refreshModelCatalog(ctx, client)
+	return modelRegistration()
+}
+
+func refreshModelCatalog(ctx context.Context, client pluginapi.HostHTTPClient) bool {
+	commandCodeModelCatalogRefreshMu.Lock()
+	defer commandCodeModelCatalogRefreshMu.Unlock()
+
 	apiKey := configuredAPIKey()
-	if apiKey != "" {
-		requestContext, cancel := context.WithTimeout(contextOrBackground(ctx), commandCodeModelCatalogTimeout)
-		defer cancel()
-		if liveModels, ok := fetchCommandCodeModels(requestContext, apiKey, client); ok {
-			models = liveModels
-		}
+	if apiKey == "" || client == nil {
+		return false
 	}
-	return modelRegistrationFor(models)
+
+	requestContext, cancel := context.WithTimeout(contextOrBackground(ctx), commandCodeModelCatalogTimeout)
+	defer cancel()
+	liveModels, ok := fetchCommandCodeModels(requestContext, apiKey, client)
+	if !ok {
+		return false
+	}
+	replaceModelCatalog(liveModels)
+	return true
 }
 
 func modelRegistrationFor(models []pluginapi.ModelInfo) pluginapi.ModelRegistrationResponse {
@@ -349,6 +392,7 @@ func handleMethodContext(parent context.Context, method string, request []byte) 
 		if err := applyLifecycleRequest(request); err != nil {
 			return nil, err
 		}
+		refreshModelCatalog(parent, newCommandCodeModelCatalogHTTPClient())
 		scheduleWireDriftCheck()
 		return okEnvelope(pluginRegistration())
 	case pluginabi.MethodPluginQuiesce:
@@ -374,7 +418,7 @@ func handleMethodContext(parent context.Context, method string, request []byte) 
 
 	switch method {
 	case pluginabi.MethodModelRegister:
-		return okEnvelope(modelRegistrationContext(parent, NewCommandCodeHostHTTPClient(callHost, "")))
+		return okEnvelope(modelRegistration())
 	case pluginabi.MethodExecutorIdentifier:
 		return okEnvelope(identifierResponse{Identifier: pluginProvider})
 	case pluginabi.MethodExecutorExecute, pluginabi.MethodExecutorExecuteStream, pluginabi.MethodExecutorCountTokens:
