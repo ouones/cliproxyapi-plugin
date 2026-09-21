@@ -23,6 +23,8 @@ const (
 	verifiedSchemaVersion           uint32 = 6
 	verifiedCommandCodeWireVersion         = "1.58.0"
 	driftCheckURL                          = "https://registry.npmjs.org/command-code/latest"
+	commandCodeModelCatalogPath            = "/provider/v1/models"
+	commandCodeModelCatalogTimeout         = 10 * time.Second
 	executorNonStreamingIdleTimeout        = 90 * time.Second
 	executorStreamingIdleTimeout           = 30 * time.Second
 )
@@ -51,6 +53,20 @@ var modelsJSON []byte
 type modelDefinition struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
+}
+
+type commandCodeModelCatalog struct {
+	Data []commandCodeModel `json:"data"`
+}
+
+type commandCodeModel struct {
+	ID            string `json:"id"`
+	Object        string `json:"object"`
+	Created       int64  `json:"created"`
+	OwnedBy       string `json:"owned_by"`
+	Name          string `json:"name"`
+	DisplayName   string `json:"display_name"`
+	ContextLength int64  `json:"context_length"`
 }
 
 var commandCodeModels = loadModels()
@@ -224,10 +240,103 @@ func pluginRegistration() registration {
 }
 
 func modelRegistration() pluginapi.ModelRegistrationResponse {
+	return modelRegistrationFor(commandCodeModels)
+}
+
+func modelRegistrationContext(ctx context.Context, client pluginapi.HostHTTPClient) pluginapi.ModelRegistrationResponse {
+	models := commandCodeModels
+	apiKey := configuredAPIKey()
+	if apiKey != "" {
+		requestContext, cancel := context.WithTimeout(contextOrBackground(ctx), commandCodeModelCatalogTimeout)
+		defer cancel()
+		if liveModels, ok := fetchCommandCodeModels(requestContext, apiKey, client); ok {
+			models = liveModels
+		}
+	}
+	return modelRegistrationFor(models)
+}
+
+func modelRegistrationFor(models []pluginapi.ModelInfo) pluginapi.ModelRegistrationResponse {
 	return pluginapi.ModelRegistrationResponse{
 		Provider: pluginProvider,
-		Models:   append([]pluginapi.ModelInfo(nil), commandCodeModels...),
+		Models:   append([]pluginapi.ModelInfo(nil), models...),
 	}
+}
+
+func fetchCommandCodeModels(ctx context.Context, apiKey string, client pluginapi.HostHTTPClient) ([]pluginapi.ModelInfo, bool) {
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" || client == nil {
+		return nil, false
+	}
+
+	response, err := client.Do(contextOrBackground(ctx), pluginapi.HTTPRequest{
+		Method: http.MethodGet,
+		URL:    commandCodeAPIBase() + commandCodeModelCatalogPath,
+		Headers: http.Header{
+			"Authorization":          {"Bearer " + apiKey},
+			"x-cli-environment":      {"production"},
+			"x-command-code-version": {verifiedCommandCodeWireVersion},
+		},
+	})
+	if err != nil || response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return nil, false
+	}
+
+	var catalog commandCodeModelCatalog
+	if err := json.Unmarshal(response.Body, &catalog); err != nil {
+		return nil, false
+	}
+	return modelInfosFromCatalog(catalog.Data)
+}
+
+func modelInfosFromCatalog(definitions []commandCodeModel) ([]pluginapi.ModelInfo, bool) {
+	if len(definitions) == 0 {
+		return nil, false
+	}
+
+	models := make([]pluginapi.ModelInfo, 0, len(definitions))
+	seen := make(map[string]struct{}, len(definitions))
+	for _, definition := range definitions {
+		if strings.TrimSpace(definition.ID) == "" {
+			return nil, false
+		}
+		if definition.ContextLength < 0 {
+			return nil, false
+		}
+		if _, ok := seen[definition.ID]; ok {
+			continue
+		}
+		seen[definition.ID] = struct{}{}
+
+		object := definition.Object
+		if object == "" {
+			object = "model"
+		}
+		ownedBy := definition.OwnedBy
+		if ownedBy == "" {
+			ownedBy = pluginProvider
+		}
+		displayName := definition.DisplayName
+		if displayName == "" {
+			displayName = definition.Name
+		}
+		if displayName == "" {
+			displayName = definition.ID
+		}
+		models = append(models, pluginapi.ModelInfo{
+			ID:            definition.ID,
+			Name:          definition.ID,
+			Object:        object,
+			Created:       definition.Created,
+			OwnedBy:       ownedBy,
+			DisplayName:   displayName,
+			ContextLength: definition.ContextLength,
+		})
+	}
+	if len(models) == 0 {
+		return nil, false
+	}
+	return models, true
 }
 
 func handleMethod(method string, request []byte) ([]byte, error) {
@@ -265,7 +374,7 @@ func handleMethodContext(parent context.Context, method string, request []byte) 
 
 	switch method {
 	case pluginabi.MethodModelRegister:
-		return okEnvelope(modelRegistration())
+		return okEnvelope(modelRegistrationContext(parent, NewCommandCodeHostHTTPClient(callHost, "")))
 	case pluginabi.MethodExecutorIdentifier:
 		return okEnvelope(identifierResponse{Identifier: pluginProvider})
 	case pluginabi.MethodExecutorExecute, pluginabi.MethodExecutorExecuteStream, pluginabi.MethodExecutorCountTokens:
