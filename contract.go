@@ -17,7 +17,7 @@ import (
 
 const (
 	pluginID                               = "command-code"
-	pluginVersion                          = "0.1.0"
+	pluginVersion                          = "0.1.1"
 	pluginProvider                         = pluginID
 	verifiedABIVersion              uint32 = 1
 	verifiedSchemaVersion           uint32 = 6
