@@ -1145,7 +1145,7 @@ int main(int argc, char **argv) {
         "\"finish_reason\":\"tool_calls\"", "\"total_tokens\":12", "\"cached_tokens\":2",
     };
     static const char *const chat_stream_markers[] = {
-        "reasoning_content", "\"finish_reason\":\"stop\"", "\"total_tokens\":12", "data: [DONE]",
+        "reasoning_content", "\"object\":\"chat.completion.chunk\"", "\"finish_reason\":\"stop\"", "\"total_tokens\":12",
     };
     static const char *const responses_non_markers[] = {
         "\"object\":\"response\"", "\"status\":\"completed\"", "\"output_text\":\"answer\"",
