@@ -93,6 +93,45 @@ func TestModelRegistrationUsesLiveCatalogAndDeduplicatesIDs(t *testing.T) {
 	}
 }
 
+func TestModelRegisterRefreshesLiveCatalog(t *testing.T) {
+	clearCredentialState()
+	t.Cleanup(clearCredentialState)
+	lifecycle, err := json.Marshal(lifecycleRequest{ConfigYAML: []byte("api-key: user_catalog_secret\n")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyLifecycleRequest(lifecycle); err != nil {
+		t.Fatal(err)
+	}
+
+	client := &fakeModelCatalogHTTPClient{response: pluginapi.HTTPResponse{
+		StatusCode: http.StatusOK,
+		Body:       []byte(`{"data":[{"id":"deepseek/deepseek-v4.1-flash"}]}`),
+	}}
+	previousClientFactory := newCommandCodeModelCatalogHTTPClient
+	newCommandCodeModelCatalogHTTPClient = func() pluginapi.HostHTTPClient { return client }
+	t.Cleanup(func() { newCommandCodeModelCatalogHTTPClient = previousClientFactory })
+
+	raw, err := handleMethodContext(context.Background(), pluginabi.MethodModelRegister, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result envelope
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	var registration pluginapi.ModelRegistrationResponse
+	if err := json.Unmarshal(result.Result, &registration); err != nil {
+		t.Fatal(err)
+	}
+	if got := modelIDs(registration.Models); !reflect.DeepEqual(got, []string{"deepseek/deepseek-v4.1-flash"}) {
+		t.Fatalf("model.register returned %v, want the live catalog", got)
+	}
+	if got := client.request.Headers.Get("User-Agent"); got != "cli" {
+		t.Fatalf("model catalog User-Agent = %q, want cli", got)
+	}
+}
+
 func TestPluginReconfigureRefreshesAndReplacesCompleteModelSnapshot(t *testing.T) {
 	t.Setenv("CC_API_BASE", "https://command-code.test")
 	clearCredentialState()

@@ -317,6 +317,7 @@ func fetchCommandCodeModels(ctx context.Context, apiKey string, client pluginapi
 		URL:    commandCodeAPIBase() + commandCodeModelCatalogPath,
 		Headers: http.Header{
 			"Authorization":          {"Bearer " + apiKey},
+			"User-Agent":             {"cli"},
 			"x-cli-environment":      {"production"},
 			"x-command-code-version": {verifiedCommandCodeWireVersion},
 		},
@@ -418,6 +419,7 @@ func handleMethodContext(parent context.Context, method string, request []byte) 
 
 	switch method {
 	case pluginabi.MethodModelRegister:
+		refreshModelCatalog(parent, newCommandCodeModelCatalogHTTPClient())
 		return okEnvelope(modelRegistration())
 	case pluginabi.MethodExecutorIdentifier:
 		return okEnvelope(identifierResponse{Identifier: pluginProvider})
