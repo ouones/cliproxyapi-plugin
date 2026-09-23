@@ -1137,7 +1137,7 @@ func formatSSE(event string, data any) []byte {
 	return []byte("event: " + event + "\ndata: " + string(payload) + "\n\n")
 }
 
-func formatChatSSE(id string, created int64, model string, delta map[string]any, finishReason string, usage map[string]any) []byte {
+func formatChatStreamChunk(id string, created int64, model string, delta map[string]any, finishReason string, usage map[string]any) []byte {
 	choice := map[string]any{"index": 0, "delta": delta, "finish_reason": nil}
 	if finishReason != "" {
 		choice["finish_reason"] = finishReason
@@ -1147,5 +1147,5 @@ func formatChatSSE(id string, created int64, model string, delta map[string]any,
 		chunk["usage"] = usage
 	}
 	payload, _ := json.Marshal(chunk)
-	return []byte("data: " + string(payload) + "\n\n")
+	return payload
 }

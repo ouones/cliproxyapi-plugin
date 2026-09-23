@@ -119,9 +119,12 @@ func TestChatExecutorSmokeCompletesStreamWithUsage(t *testing.T) {
 		if chunk.Err != nil {
 			t.Fatalf("stream chunk error: %v", chunk.Err)
 		}
+		if !json.Valid([]byte(strings.TrimSpace(string(chunk.Payload)))) {
+			t.Fatalf("Chat stream chunk must be raw JSON for CPA SSE framing: %q", chunk.Payload)
+		}
 		stream.Write(chunk.Payload)
 	}
-	if !strings.Contains(stream.String(), "reasoning_content") || !strings.Contains(stream.String(), `"finish_reason":"stop"`) || !strings.Contains(stream.String(), `"total_tokens":6`) || !strings.Contains(stream.String(), "data: [DONE]") {
+	if !strings.Contains(stream.String(), "reasoning_content") || !strings.Contains(stream.String(), `"finish_reason":"stop"`) || !strings.Contains(stream.String(), `"total_tokens":6`) || strings.Contains(stream.String(), "data:") || strings.Contains(stream.String(), "[DONE]") {
 		t.Fatalf("unexpected Chat stream: %s", stream.String())
 	}
 }

@@ -237,7 +237,7 @@ func (e *ChatCompletionsExecutor) translateChatStream(ctx context.Context, runti
 		state.errorEmitted = true
 		message := err.Error()
 		payload, _ := json.Marshal(map[string]any{"error": map[string]any{"message": message, "type": protocolErrorType(err)}})
-		_ = emit(append([]byte("data: "), append(payload, []byte("\n\n")...)...))
+		_ = emit(payload)
 	}
 	process := func(line string) bool {
 		event := parseCCEvent([]byte(line))
@@ -258,7 +258,7 @@ func (e *ChatCompletionsExecutor) translateChatStream(ctx context.Context, runti
 					delta["role"] = "assistant"
 				}
 				state.chunkIndex++
-				return emit(formatChatSSE(state.completionID, state.created, state.model, delta, "", nil))
+				return emit(formatChatStreamChunk(state.completionID, state.created, state.model, delta, "", nil))
 			}
 		case "reasoning-delta":
 			text := stringValue(event["text"])
@@ -268,7 +268,7 @@ func (e *ChatCompletionsExecutor) translateChatStream(ctx context.Context, runti
 					delta["role"] = "assistant"
 				}
 				state.chunkIndex++
-				return emit(formatChatSSE(state.completionID, state.created, state.model, delta, "", nil))
+				return emit(formatChatStreamChunk(state.completionID, state.created, state.model, delta, "", nil))
 			}
 		case "tool-call":
 			id := stringValue(event["toolCallId"])
@@ -287,7 +287,7 @@ func (e *ChatCompletionsExecutor) translateChatStream(ctx context.Context, runti
 			}
 			state.chunkIndex++
 			state.toolCallIndex++
-			return emit(formatChatSSE(state.completionID, state.created, state.model, delta, "", nil))
+			return emit(formatChatStreamChunk(state.completionID, state.created, state.model, delta, "", nil))
 		case "finish":
 			state.finishEmitted = true
 			usage := map[string]any{
@@ -296,7 +296,7 @@ func (e *ChatCompletionsExecutor) translateChatStream(ctx context.Context, runti
 				"total_tokens":          state.collected.Usage.InputTokens + state.collected.Usage.OutputTokens,
 				"prompt_tokens_details": map[string]any{"cached_tokens": state.collected.Usage.CachedInputTokens},
 			}
-			return emit(formatChatSSE(state.completionID, state.created, state.model, map[string]any{}, toOpenAIFinishReason(state.collected.FinishReason), usage))
+			return emit(formatChatStreamChunk(state.completionID, state.created, state.model, map[string]any{}, toOpenAIFinishReason(state.collected.FinishReason), usage))
 		}
 		if state.collected.UpstreamError != nil && !beforeFinish {
 			emitError(state.collected.UpstreamError)
@@ -351,11 +351,10 @@ func (e *ChatCompletionsExecutor) translateChatStream(ctx context.Context, runti
 			"total_tokens":          state.collected.Usage.InputTokens + state.collected.Usage.OutputTokens,
 			"prompt_tokens_details": map[string]any{"cached_tokens": state.collected.Usage.CachedInputTokens},
 		}
-		if !emit(formatChatSSE(state.completionID, state.created, state.model, map[string]any{}, toOpenAIFinishReason(state.collected.FinishReason), usage)) {
+		if !emit(formatChatStreamChunk(state.completionID, state.created, state.model, map[string]any{}, toOpenAIFinishReason(state.collected.FinishReason), usage)) {
 			return
 		}
 	}
-	_ = emit([]byte("data: [DONE]\n\n"))
 }
 
 func emitStreamError(output chan<- pluginapi.ExecutorStreamChunk, err error) {
